@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IPTV Web Player</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+    <div class="grid-overlay" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="title-wrap">
+          <p class="eyebrow">Direct Stream Client</p>
+          <h1>IPTV Web Player</h1>
+        </div>
+        <details class="settings-menu">
+          <summary aria-label="Open settings menu">Settings</summary>
+          <div class="settings-panel">
+            <label for="playlistUrl">Playlist URL</label>
+            <div class="playlist-row">
+              <input
+                id="playlistUrl"
+                type="url"
+                value="https://iptv-org.github.io/iptv/index.m3u"
+                aria-label="Playlist URL"
+              />
+              <button id="loadBtn" type="button">Load Playlist</button>
+            </div>
+            <a
+              class="repo-link"
+              href="https://github.com/iptv-org/iptv"
+              target="_blank"
+              rel="noreferrer"
+              >iptv-org source</a
+            >
+          </div>
+        </details>
+      </header>
+
+      <section class="status-row">
+        <p class="hint">
+          Playback is direct from your device to channel source. No server-side transcoding.
+        </p>
+        <p id="status" class="status">Ready.</p>
+      </section>
+
+      <section class="layout">
+        <aside class="sidebar">
+          <div class="filter-row">
+            <input id="searchInput" type="search" placeholder="Search channels..." />
+            <select id="groupSelect" aria-label="Filter by group">
+              <option value="all">All Groups</option>
+            </select>
+          </div>
+          <div class="meta-row">
+            <span id="channelCount">0 channels</span>
+          </div>
+          <ul id="channelList" class="channel-list" aria-live="polite"></ul>
+        </aside>
+
+        <section class="player-panel">
+          <div class="video-wrap">
+            <video id="video" controls playsinline></video>
+          </div>
+
+          <div class="now-playing">
+            <img id="channelLogo" alt="Channel logo" hidden />
+            <div class="now-playing-text">
+              <p class="eyebrow">Now Playing</p>
+              <h2 id="channelName">Select a channel</h2>
+              <p id="channelMeta" class="channel-meta">Waiting for selection.</p>
+            </div>
+          </div>
+
+          <details class="notes">
+            <summary>Troubleshooting</summary>
+            <ul>
+              <li>Some channels fail in browser due to CORS, HTTPS/HTTP mismatch, or codec support.</li>
+              <li>If a channel works in VLC but not here, it is usually a browser security limitation.</li>
+              <li>Try region-specific playlists for faster load and fewer dead channels.</li>
+            </ul>
+          </details>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

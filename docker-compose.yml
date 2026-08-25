@@ -1,0 +1,7 @@
+services:
+  iptv-web:
+    build: .
+    container_name: iptv-web
+    ports:
+      - "8085:80"
+    restart: unless-stopped

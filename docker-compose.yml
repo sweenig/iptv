@@ -2,6 +2,21 @@ services:
   iptv-web:
     build: .
     container_name: iptv-web
+    depends_on:
+      - favorites-api
     ports:
       - "8085:80"
     restart: unless-stopped
+
+  favorites-api:
+    build: ./api
+    container_name: iptv-favorites-api
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+    volumes:
+      - favorites_data:/data
+    restart: unless-stopped
+
+volumes:
+  favorites_data:

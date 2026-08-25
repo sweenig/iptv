@@ -1,10 +1,21 @@
-# IPTV Web Player (Docker + Nginx)
+# IPTV Web Player (Docker)
 
 Browser-based IPTV client that loads an M3U playlist and plays channels directly from source stream URLs.
 
 - No server-side transcoding.
-- Nginx only serves static files.
+- Nginx serves the web app.
 - Playback happens in the end-user browser (HLS.js, DASH.js, or native video).
+- Favorites are persisted server-side and shared globally across sessions, browsers, and devices.
+- Favorites can be drag-reordered and the order is persisted globally.
+- Full settings can be exported/imported as JSON from the settings menu, including favorites, hidden channels, playlist URL, and sidebar width.
+- Failed channels can be hidden (blacklisted) globally from an in-player prompt.
+- Channel panel width can be resized with the visible splitter handle.
+- Hidden channels can be individually restored from a settings list with slash-eye controls.
+
+## Services
+
+- `iptv-web` (Nginx): serves UI and proxies `/api/*`.
+- `favorites-api` (Node.js): stores favorites in a Docker volume.
 
 ## Run with Docker Compose
 
@@ -14,7 +25,7 @@ docker compose up -d --build
 
 Open:
 
-- http://localhost:8080
+- http://localhost:8085
 
 Stop:
 
@@ -22,18 +33,10 @@ Stop:
 docker compose down
 ```
 
-## Run with Docker CLI
-
-Build:
+To reset global favorites:
 
 ```bash
-docker build -t iptv-web .
-```
-
-Run:
-
-```bash
-docker run --rm -p 8080:80 --name iptv-web iptv-web
+docker compose down -v
 ```
 
 ## Default Playlist
@@ -60,7 +63,9 @@ Common reasons:
 
 - `index.html`: UI shell
 - `styles.css`: responsive styling
-- `app.js`: playlist parser, filters, player logic
-- `nginx.conf`: static hosting config
-- `Dockerfile`: container image
-- `docker-compose.yml`: local runtime
+- `app.js`: playlist parsing, filtering, player logic, favorites UI
+- `nginx.conf`: static hosting and API proxy
+- `Dockerfile`: `iptv-web` image
+- `docker-compose.yml`: local runtime and persistent volume
+- `api/server.js`: favorites API
+- `api/Dockerfile`: `favorites-api` image

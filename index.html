@@ -38,6 +38,19 @@
               />
               <button id="loadBtn" type="button">Load Playlist</button>
             </div>
+            <div class="blacklist-row">
+              <span id="blacklistCount">0 hidden channels</span>
+              <button id="clearBlacklistBtn" class="favorites-action-btn" type="button">Clear Hidden</button>
+            </div>
+            <div class="settings-actions-row">
+              <button id="exportSettingsBtn" class="favorites-action-btn" type="button">Export Settings</button>
+              <button id="importSettingsBtn" class="favorites-action-btn" type="button">Import Settings</button>
+              <input id="importSettingsInput" type="file" accept="application/json" hidden />
+            </div>
+            <section id="hiddenChannelsSection" class="hidden-channels-section" hidden>
+              <p class="hidden-channels-label">Hidden Channels</p>
+              <ul id="hiddenChannelsList" class="hidden-channels-list" aria-live="polite"></ul>
+            </section>
             <a
               class="repo-link"
               href="https://github.com/iptv-org/iptv"
@@ -67,12 +80,34 @@
           <div class="meta-row">
             <span id="channelCount">0 channels</span>
           </div>
+          <section id="favoritesSection" class="favorites-section" hidden>
+            <div class="favorites-head">
+              <p class="favorites-label">Favorites</p>
+            </div>
+            <ul id="favoritesList" class="favorites-list" aria-live="polite"></ul>
+          </section>
           <ul id="channelList" class="channel-list" aria-live="polite"></ul>
         </aside>
+
+        <div id="splitHandle" class="split-handle" role="separator" aria-orientation="vertical" aria-label="Resize channel list"></div>
 
         <section class="player-panel">
           <div class="video-wrap">
             <video id="video" controls playsinline></video>
+            <div id="playerPlaceholder" class="player-placeholder">
+              <p class="player-placeholder-title">Select a channel to start playback</p>
+              <p class="player-placeholder-sub">If playback fails, you can hide channels from the overlay.</p>
+            </div>
+            <div id="playbackOverlay" class="playback-overlay" hidden>
+              <div class="playback-overlay-card">
+                <p class="eyebrow">Playback Problem</p>
+                <p id="overlayMessage" class="overlay-message">This channel did not start in the browser.</p>
+                <div class="overlay-actions">
+                  <button id="blacklistChannelBtn" type="button">Hide This Channel</button>
+                  <button id="dismissOverlayBtn" class="favorites-action-btn" type="button">Dismiss</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="now-playing">

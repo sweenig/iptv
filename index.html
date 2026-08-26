@@ -47,6 +47,20 @@
               <button id="importSettingsBtn" class="favorites-action-btn" type="button">Import Settings</button>
               <input id="importSettingsInput" type="file" accept="application/json" hidden />
             </div>
+            <section class="cc-preferences-section">
+              <p class="hidden-channels-label">CC Priority</p>
+              <p class="cc-preferences-hint">First matching preference is auto-selected when captions are available.</p>
+              <div class="cc-preferences-add-row">
+                <input
+                  id="ccPreferenceInput"
+                  type="text"
+                  placeholder="Add caption preference (e.g. eng, english, spanish)"
+                  aria-label="Add closed caption preference"
+                />
+                <button id="addCcPreferenceBtn" class="favorites-action-btn" type="button">Add</button>
+              </div>
+              <ul id="ccPreferencesList" class="cc-preferences-list" aria-live="polite"></ul>
+            </section>
             <section id="hiddenChannelsSection" class="hidden-channels-section" hidden>
               <p class="hidden-channels-label">Hidden Channels</p>
               <ul id="hiddenChannelsList" class="hidden-channels-list" aria-live="polite"></ul>
@@ -76,17 +90,50 @@
             <select id="groupSelect" aria-label="Filter by group">
               <option value="all">All Groups</option>
             </select>
+            <select id="countrySelect" aria-label="Filter by country">
+              <option value="all">All Countries</option>
+              <option value="__unknown">Unknown Country</option>
+            </select>
+            <select id="favoritesFilter" aria-label="Filter by favorites">
+              <option value="all">All Channels</option>
+              <option value="favorites">Favorites Only</option>
+            </select>
+            <div id="languageFilterWrap" class="language-filter-wrap" hidden>
+              <select id="languageSelect" aria-label="Filter by language">
+                <option value="all">All Languages</option>
+                <option value="__unknown">Unknown Language</option>
+              </select>
+            </div>
+            <label class="inference-toggle" for="inferLanguageToggle">
+              <input id="inferLanguageToggle" type="checkbox" />
+              Infer language when missing
+            </label>
+          </div>
+          <div class="sidebar-controls-row">
+            <button
+              id="filterCollapseBtn"
+              class="favorites-action-btn sidebar-toggle-btn filter-toggle-btn"
+              type="button"
+              aria-label="Collapse filters"
+              aria-expanded="true"
+            ></button>
+            <button
+              id="sidebarCollapseBtn"
+              class="favorites-action-btn sidebar-toggle-btn"
+              type="button"
+              aria-label="Collapse sidebar"
+              aria-expanded="true"
+            >
+              ◀
+            </button>
           </div>
           <div class="meta-row">
             <span id="channelCount">0 channels</span>
           </div>
-          <section id="favoritesSection" class="favorites-section" hidden>
-            <div class="favorites-head">
-              <p class="favorites-label">Favorites</p>
-            </div>
-            <ul id="favoritesList" class="favorites-list" aria-live="polite"></ul>
-          </section>
           <ul id="channelList" class="channel-list" aria-live="polite"></ul>
+          <button id="sidebarExpandBtn" class="sidebar-expand-rail" type="button" aria-label="Expand sidebar" hidden>
+            ▶
+          </button>
         </aside>
 
         <div id="splitHandle" class="split-handle" role="separator" aria-orientation="vertical" aria-label="Resize channel list"></div>

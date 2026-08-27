@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings - IPTV Web Player</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+    <div class="grid-overlay" aria-hidden="true"></div>
+
+    <main class="app-shell settings-page">
+      <header class="topbar">
+        <div class="title-wrap">
+          <p class="eyebrow">IPTV Web Player</p>
+          <h1>Settings</h1>
+        </div>
+        <a href="/" class="settings-button" aria-label="Back to player">← Back to Player</a>
+      </header>
+
+      <section class="status-row">
+        <p id="status" class="status">Ready.</p>
+      </section>
+
+      <div class="settings-content">
+        <!-- Playlist Card -->
+        <div class="settings-card" data-section="playlist">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-playlist', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Playlist
+          </h2>
+          <div class="card-content">
+            <label for="playlistUrl">Playlist URL</label>
+            <div class="playlist-row">
+              <input
+                id="playlistUrl"
+                type="url"
+                value="https://iptv-org.github.io/iptv/index.m3u"
+                aria-label="Playlist URL"
+              />
+              <button id="loadBtn" type="button">Load Playlist</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Management Card -->
+        <div class="settings-card" data-section="data-management">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-data-management', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Data Management
+          </h2>
+          <div class="card-content">
+            <div class="settings-actions-row">
+              <button id="exportSettingsBtn" class="favorites-action-btn" type="button">Export Settings</button>
+              <button id="importSettingsBtn" class="favorites-action-btn" type="button">Import Settings</button>
+              <input id="importSettingsInput" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </div>
+
+        <!-- Captions Card -->
+        <div class="settings-card" data-section="captions">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-captions', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Captions
+          </h2>
+          <div class="card-content">
+            <p class="cc-preferences-hint">First matching preference is auto-selected when captions are available.</p>
+            <div class="cc-preferences-add-row">
+              <input
+                id="ccPreferenceInput"
+                type="text"
+                placeholder="Add caption preference (e.g. eng, english, spanish)"
+                aria-label="Add closed caption preference"
+              />
+              <button id="addCcPreferenceBtn" class="favorites-action-btn" type="button">Add</button>
+            </div>
+            <ul id="ccPreferencesList" class="cc-preferences-list" aria-live="polite"></ul>
+          </div>
+        </div>
+
+        <!-- Hidden Channels Card -->
+        <div class="settings-card" data-section="hidden-channels">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-hidden-channels', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Hidden Channels
+          </h2>
+          <div class="card-content">
+            <div class="blacklist-row">
+              <span id="blacklistCount">0 hidden channels</span>
+              <button id="clearBlacklistBtn" class="favorites-action-btn" type="button">Clear All</button>
+            </div>
+            <ul id="hiddenChannelsList" class="hidden-channels-list" aria-live="polite"></ul>
+          </div>
+        </div>
+
+        <!-- Recordings Card -->
+        <div class="settings-card" data-section="recordings">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-recordings', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Recordings
+          </h2>
+          <div class="card-content">
+            <div class="recordings-section">
+              <h3>In Progress</h3>
+              <ul id="recordingsInProgressList" class="recordings-list" aria-live="polite">
+                <li class="recordings-empty">No recordings in progress</li>
+              </ul>
+            </div>
+            <div class="recordings-section">
+              <h3>Completed</h3>
+              <ul id="recordingsCompletedList" class="recordings-list" aria-live="polite">
+                <li class="recordings-empty">No completed recordings</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resources Card -->
+        <div class="settings-card" data-section="resources">
+          <h2 onclick="this.nextElementSibling.classList.toggle('collapsed'); localStorage.setItem('collapsed-resources', this.nextElementSibling.classList.contains('collapsed'));">
+            ▼ Resources
+          </h2>
+          <div class="card-content">
+            <a
+              class="repo-link"
+              href="https://github.com/iptv-org/iptv"
+              target="_blank"
+              rel="noreferrer"
+              >View iptv-org on GitHub</a
+            >
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="./settings-page.js?v=12"></script>
+  </body>
+</html>

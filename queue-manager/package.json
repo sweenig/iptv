@@ -1,0 +1,12 @@
+{
+  "name": "iptv-queue-manager",
+  "version": "1.0.0",
+  "description": "Queue manager for IPTV server-side recordings",
+  "main": "queue-manager.js",
+  "scripts": {
+    "start": "node queue-manager.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2"
+  }
+}

@@ -25,55 +25,7 @@
           <p class="eyebrow">Direct Stream Client</p>
           <h1>IPTV Web Player</h1>
         </div>
-        <details class="settings-menu">
-          <summary aria-label="Open settings menu">Settings</summary>
-          <div class="settings-panel">
-            <label for="playlistUrl">Playlist URL</label>
-            <div class="playlist-row">
-              <input
-                id="playlistUrl"
-                type="url"
-                value="https://iptv-org.github.io/iptv/index.m3u"
-                aria-label="Playlist URL"
-              />
-              <button id="loadBtn" type="button">Load Playlist</button>
-            </div>
-            <div class="blacklist-row">
-              <span id="blacklistCount">0 hidden channels</span>
-              <button id="clearBlacklistBtn" class="favorites-action-btn" type="button">Clear Hidden</button>
-            </div>
-            <div class="settings-actions-row">
-              <button id="exportSettingsBtn" class="favorites-action-btn" type="button">Export Settings</button>
-              <button id="importSettingsBtn" class="favorites-action-btn" type="button">Import Settings</button>
-              <input id="importSettingsInput" type="file" accept="application/json" hidden />
-            </div>
-            <section class="cc-preferences-section">
-              <p class="hidden-channels-label">CC Priority</p>
-              <p class="cc-preferences-hint">First matching preference is auto-selected when captions are available.</p>
-              <div class="cc-preferences-add-row">
-                <input
-                  id="ccPreferenceInput"
-                  type="text"
-                  placeholder="Add caption preference (e.g. eng, english, spanish)"
-                  aria-label="Add closed caption preference"
-                />
-                <button id="addCcPreferenceBtn" class="favorites-action-btn" type="button">Add</button>
-              </div>
-              <ul id="ccPreferencesList" class="cc-preferences-list" aria-live="polite"></ul>
-            </section>
-            <section id="hiddenChannelsSection" class="hidden-channels-section" hidden>
-              <p class="hidden-channels-label">Hidden Channels</p>
-              <ul id="hiddenChannelsList" class="hidden-channels-list" aria-live="polite"></ul>
-            </section>
-            <a
-              class="repo-link"
-              href="https://github.com/iptv-org/iptv"
-              target="_blank"
-              rel="noreferrer"
-              >iptv-org source</a
-            >
-          </div>
-        </details>
+        <button id="settingsBtn" class="settings-button" aria-label="Open settings">⚙️ Settings</button>
       </header>
 
       <section class="status-row">
@@ -82,6 +34,9 @@
         </p>
         <p id="status" class="status">Ready.</p>
       </section>
+
+      <!-- Hidden playlist URL input for loading playlists -->
+      <input id="playlistUrl" type="hidden" value="https://iptv-org.github.io/iptv/index.m3u" />
 
       <section class="layout">
         <aside class="sidebar">
@@ -131,6 +86,7 @@
             <span id="channelCount">0 channels</span>
           </div>
           <ul id="channelList" class="channel-list" aria-live="polite"></ul>
+
           <button id="sidebarExpandBtn" class="sidebar-expand-rail" type="button" aria-label="Expand sidebar" hidden>
             ▶
           </button>
@@ -155,6 +111,32 @@
                 </div>
               </div>
             </div>
+
+            <dialog id="recordingDurationModal" class="recording-duration-modal">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h2>Record Channel</h2>
+                  <button id="recordingModalCloseBtn" type="button" class="modal-close-btn" aria-label="Close modal">✕</button>
+                </div>
+                <div class="modal-body">
+                  <p id="recordingChannelName" class="recording-channel-name"></p>
+                  <p class="recording-hint">Select recording duration (maximum 4 hours)</p>
+                  <div class="duration-options">
+                    <button type="button" class="duration-btn" data-duration="30">30 min</button>
+                    <button type="button" class="duration-btn" data-duration="60">1 hour</button>
+                    <button type="button" class="duration-btn" data-duration="90">1.5 hours</button>
+                    <button type="button" class="duration-btn" data-duration="120">2 hours</button>
+                    <button type="button" class="duration-btn" data-duration="150">2.5 hours</button>
+                    <button type="button" class="duration-btn" data-duration="180">3 hours</button>
+                    <button type="button" class="duration-btn" data-duration="210">3.5 hours</button>
+                    <button type="button" class="duration-btn" data-duration="240">4 hours</button>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button id="recordingModalCancelBtn" type="button" class="favorites-action-btn">Cancel</button>
+                </div>
+              </div>
+            </dialog>
           </div>
 
           <div class="now-playing">
@@ -178,6 +160,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=15"></script>
   </body>
 </html>

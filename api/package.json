@@ -1,0 +1,12 @@
+{
+  "name": "iptv-data-api",
+  "version": "1.0.0",
+  "description": "API server for IPTV favorites, blacklist, and recordings",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2"
+  }
+}

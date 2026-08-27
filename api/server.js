@@ -1,11 +1,15 @@
 const http = require("node:http");
-const fs = require("node:fs/promises");
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const path = require("node:path");
+const Database = require("better-sqlite3");
 
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || "/data";
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "/recordings";
 const FAVORITES_FILE = path.join(DATA_DIR, "favorites.json");
 const BLACKLIST_FILE = path.join(DATA_DIR, "blacklist.json");
+const DB_PATH = path.join(DATA_DIR, "recordings.db");
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -16,17 +20,17 @@ function sendJson(res, statusCode, payload) {
 }
 
 async function ensureDataFile(filePath, defaultJson = "[]\n") {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fsp.mkdir(DATA_DIR, { recursive: true });
   try {
-    await fs.access(filePath);
+    await fsp.access(filePath);
   } catch {
-    await fs.writeFile(filePath, defaultJson, "utf8");
+    await fsp.writeFile(filePath, defaultJson, "utf8");
   }
 }
 
 async function readJsonArray(filePath) {
   await ensureDataFile(filePath);
-  const raw = await fs.readFile(filePath, "utf8");
+  const raw = await fsp.readFile(filePath, "utf8");
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -38,7 +42,7 @@ async function readJsonArray(filePath) {
 async function writeJsonArray(filePath, data) {
   await ensureDataFile(filePath);
   const tempFile = `${filePath}.tmp`;
-  await fs.writeFile(tempFile, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  await fsp.writeFile(tempFile, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   await fs.rename(tempFile, filePath);
 }
 
@@ -143,6 +147,29 @@ function normalizeStringList(input) {
   }
 
   return out;
+}
+
+async function initializeDatabase() {
+  try {
+    await fsp.mkdir(DATA_DIR, { recursive: true });
+    const db = new Database(DB_PATH);
+    
+    // Read and execute init script
+    const initScriptPath = path.join(__dirname, "db", "init.sql");
+    const initScript = await fsp.readFile(initScriptPath, "utf8");
+    
+    // Execute each statement in the init script
+    const statements = initScript.split(";").filter((stmt) => stmt.trim());
+    for (const statement of statements) {
+      db.exec(statement);
+    }
+    
+    db.close();
+    console.log("Database initialized successfully at", DB_PATH);
+  } catch (err) {
+    console.error("Failed to initialize database:", err);
+    process.exit(1);
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -287,6 +314,331 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Recordings endpoints - must come before the /favorites pathname check
+    if (url.pathname.startsWith("/recordings")) {
+      // POST /recordings/start - Create a new recording job
+      if (req.method === "POST" && url.pathname === "/recordings/start") {
+        const body = await parseBody(req);
+        const channelUrl = typeof body?.channel_url === "string" ? body.channel_url.trim() : "";
+        const channelName = typeof body?.channel_name === "string" ? body.channel_name.trim() : "";
+        const durationMinutes = Number(body?.duration_minutes) || 0;
+
+        if (!channelUrl || !channelName) {
+          sendJson(res, 400, { error: "channel_url and channel_name are required" });
+          return;
+        }
+
+        if (durationMinutes < 0.5 || durationMinutes > 240) {
+          sendJson(res, 400, { error: "duration_minutes must be between 0.5 and 240 minutes (4 hours)" });
+          return;
+        }
+
+        try {
+          const db = new Database(DB_PATH);
+          const recordingId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          const now = new Date().toISOString();
+
+          db.prepare(
+            `INSERT INTO recordings_jobs 
+             (id, channel_url, channel_name, duration_minutes, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          ).run(recordingId, channelUrl, channelName, durationMinutes, "pending", now);
+
+          db.close();
+
+          const estimatedEndTime = new Date(Date.now() + (durationMinutes + 7) * 60 * 1000).toISOString();
+
+          sendJson(res, 201, {
+            ok: true,
+            recording_id: recordingId,
+            channel_name: channelName,
+            duration_minutes: durationMinutes,
+            status: "pending",
+            created_at: now,
+            estimated_completion: estimatedEndTime,
+          });
+          return;
+        } catch (err) {
+          console.error("Error creating recording job:", err);
+          sendJson(res, 500, { error: "Failed to create recording job" });
+          return;
+        }
+      }
+
+      // GET /recordings/list - List recordings for a channel or all recordings
+      if (req.method === "GET" && url.pathname === "/recordings/list") {
+        const channelName = (url.searchParams.get("channel_name") || "").trim();
+
+        try {
+          const db = new Database(DB_PATH);
+          let recordings;
+
+          if (channelName) {
+            // Get recordings for specific channel
+            recordings = db
+              .prepare(
+                `SELECT id, channel_name, duration_minutes, status, file_path, created_at, started_at, completed_at, error
+                 FROM recordings_jobs 
+                 WHERE channel_name = ? 
+                 ORDER BY created_at DESC`
+              )
+              .all(channelName);
+          } else {
+            // Get all recordings
+            recordings = db
+              .prepare(
+                `SELECT id, channel_name, duration_minutes, status, file_path, created_at, started_at, completed_at, error
+                 FROM recordings_jobs 
+                 ORDER BY created_at DESC`
+              )
+              .all();
+          }
+
+          db.close();
+
+          sendJson(res, 200, { ok: true, channel_name: channelName || null, recordings });
+          return;
+        } catch (err) {
+          console.error("Error fetching recordings:", err);
+          sendJson(res, 500, { error: "Failed to fetch recordings" });
+          return;
+        }
+      }
+
+      // GET /recordings/status/:id - Get recording status
+      if (req.method === "GET" && url.pathname.match(/^\/recordings\/status\//)) {
+        const recordingId = url.pathname.split("/").pop();
+
+        try {
+          const db = new Database(DB_PATH);
+          const job = db
+            .prepare(
+              `SELECT id, channel_name, duration_minutes, status, recorder_id, file_path, error, created_at, started_at, completed_at, last_heartbeat
+               FROM recordings_jobs 
+               WHERE id = ?`
+            )
+            .get(recordingId);
+
+          db.close();
+
+          if (!job) {
+            sendJson(res, 404, { error: "Recording not found" });
+            return;
+          }
+
+          sendJson(res, 200, { ok: true, recording: job });
+          return;
+        } catch (err) {
+          console.error("Error fetching recording status:", err);
+          sendJson(res, 500, { error: "Failed to fetch recording status" });
+          return;
+        }
+      }
+
+      // DELETE /recordings/:id - Delete a recording
+      if (req.method === "DELETE" && url.pathname.match(/^\/recordings\/[^/]+$/) && !url.pathname.includes("status")) {
+        const recordingId = url.pathname.split("/").pop();
+
+        try {
+          const db = new Database(DB_PATH);
+          const job = db.prepare("SELECT file_path FROM recordings_jobs WHERE id = ?").get(recordingId);
+
+          if (!job) {
+            db.close();
+            sendJson(res, 404, { error: "Recording not found" });
+            return;
+          }
+
+          // Delete the recording record
+          db.prepare("DELETE FROM recordings_jobs WHERE id = ?").run(recordingId);
+          db.close();
+
+          // Try to delete the file asynchronously
+          if (job.file_path) {
+            const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "/recordings";
+            const filePath = path.join(RECORDINGS_DIR, job.file_path);
+            fs.unlink(filePath).catch((err) => {
+              if (err.code !== "ENOENT") {
+                console.warn("Warning: Could not delete recording file:", err);
+              }
+            });
+          }
+
+          sendJson(res, 200, { ok: true, message: "Recording deleted" });
+          return;
+        } catch (err) {
+          console.error("Error deleting recording:", err);
+          sendJson(res, 500, { error: "Failed to delete recording" });
+          return;
+        }
+      }
+
+      // PUT /recordings/:id/cancel - Cancel a recording
+      if (req.method === "PUT" && url.pathname.match(/^\/recordings\/[^/]+\/cancel$/)) {
+        const recordingId = url.pathname.split("/")[2];
+        const body = await parseBody(req);
+        const deleteFile = body?.delete_file === true;
+
+        try {
+          const db = new Database(DB_PATH);
+          const job = db.prepare("SELECT status, file_path FROM recordings_jobs WHERE id = ?").get(recordingId);
+
+          if (!job) {
+            db.close();
+            sendJson(res, 404, { error: "Recording not found" });
+            return;
+          }
+
+          if (job.status !== "recording" && job.status !== "pending") {
+            db.close();
+            sendJson(res, 400, { error: "Can only cancel in-progress or pending recordings" });
+            return;
+          }
+
+          // Mark as failed with cancellation message
+          db.prepare("UPDATE recordings_jobs SET status = ?, error = ? WHERE id = ?").run(
+            "failed",
+            "Recording cancelled by user",
+            recordingId
+          );
+          db.close();
+
+          // Delete file if requested
+          if (deleteFile && job.file_path) {
+            const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "/recordings";
+            const filePath = path.join(RECORDINGS_DIR, job.file_path);
+            fs.unlink(filePath).catch((err) => {
+              if (err.code !== "ENOENT") {
+                console.warn("Warning: Could not delete recording file:", err);
+              }
+            });
+          }
+
+          sendJson(res, 200, { ok: true, message: "Recording cancelled" });
+          return;
+        } catch (err) {
+          console.error("Error cancelling recording:", err);
+          sendJson(res, 500, { error: "Failed to cancel recording" });
+          return;
+        }
+      }
+
+      // PUT /recordings/:id/rename - Rename a completed recording
+      if (req.method === "PUT" && url.pathname.match(/^\/recordings\/[^/]+\/rename$/)) {
+        const recordingId = url.pathname.split("/")[2];
+        const body = await parseBody(req);
+        const newName = typeof body?.name === "string" ? body.name.trim() : "";
+
+        if (!newName) {
+          sendJson(res, 400, { error: "name is required" });
+          return;
+        }
+
+        try {
+          const db = new Database(DB_PATH);
+          const job = db.prepare("SELECT status, file_path FROM recordings_jobs WHERE id = ?").get(recordingId);
+
+          if (!job) {
+            db.close();
+            sendJson(res, 404, { error: "Recording not found" });
+            return;
+          }
+
+          if (job.status !== "complete") {
+            db.close();
+            sendJson(res, 400, { error: "Can only rename completed recordings" });
+            return;
+          }
+
+          if (!job.file_path) {
+            db.close();
+            sendJson(res, 400, { error: "Recording has no file path" });
+            return;
+          }
+
+          // Rename the file
+          const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "/recordings";
+          const oldPath = path.join(RECORDINGS_DIR, job.file_path);
+          const dirName = path.dirname(oldPath);
+          const ext = path.extname(job.file_path);
+          const newFileName = `${newName}${ext}`;
+          const newFilePath = path.join(dirName, newFileName);
+          const relativeNewPath = path.relative(RECORDINGS_DIR, newFilePath);
+
+          fs.rename(oldPath, newFilePath)
+            .then(() => {
+              // Update database with new file path
+              const updateDb = new Database(DB_PATH);
+              updateDb.prepare("UPDATE recordings_jobs SET file_path = ? WHERE id = ?").run(relativeNewPath, recordingId);
+              updateDb.close();
+            })
+            .catch((err) => {
+              console.error("Error renaming recording file:", err);
+            });
+
+          sendJson(res, 200, { ok: true, message: "Recording renamed" });
+          return;
+        } catch (err) {
+          console.error("Error renaming recording:", err);
+          sendJson(res, 500, { error: "Failed to rename recording" });
+          return;
+        }
+      }
+
+      // GET /recordings/file/:id - Serve recording file
+      if (req.method === "GET" && url.pathname.match(/^\/recordings\/file\/[^/]+$/)) {
+        const recordingId = url.pathname.split("/").pop();
+
+        try {
+          const db = new Database(DB_PATH);
+          const job = db.prepare("SELECT file_path, channel_name FROM recordings_jobs WHERE id = ?").get(recordingId);
+          db.close();
+
+          if (!job || !job.file_path) {
+            sendJson(res, 404, { error: "Recording not found" });
+            return;
+          }
+
+          const filePath = path.join(RECORDINGS_DIR, job.file_path);
+
+          // Check if file exists
+          fsp
+            .stat(filePath)
+            .then(() => {
+              // Stream the file
+              res.setHeader("Content-Type", "video/mp4");
+              res.setHeader("Cache-Control", "public, max-age=3600");
+              res.setHeader(
+                "Content-Disposition",
+                `inline; filename="${path.basename(filePath)}"`
+              );
+
+              const fileStream = fs.createReadStream(filePath);
+              fileStream.pipe(res);
+
+              fileStream.on("error", (err) => {
+                console.error("Error streaming file:", err);
+                if (!res.headersSent) {
+                  res.statusCode = 500;
+                  res.end("Error streaming file");
+                }
+              });
+            })
+            .catch(() => {
+              sendJson(res, 404, { error: "Recording file not found on disk" });
+            });
+          return;
+        } catch (err) {
+          console.error("Error serving recording file:", err);
+          sendJson(res, 500, { error: "Failed to serve recording" });
+          return;
+        }
+      }
+
+      sendJson(res, 404, { error: "Not found" });
+      return;
+    }
+
     if (url.pathname !== "/favorites") {
       sendJson(res, 404, { error: "Not found" });
       return;
@@ -342,6 +694,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`favorites-api listening on :${PORT}`);
-});
+(async () => {
+  await initializeDatabase();
+  server.listen(PORT, () => {
+    console.log(`data-api listening on :${PORT}`);
+  });
+})();

@@ -95,11 +95,14 @@ const state = {
   ccApplyTimer: null,
   isSidebarCollapsed: false,
   isFiltersCollapsed: false,
+  recordings: new Map(),
+  recordingsMap: new Map(),
+  recordingChannelForModal: null,
+  selectedRecordingDuration: null,
 };
 
 const els = {
   playlistUrl: document.getElementById("playlistUrl"),
-  loadBtn: document.getElementById("loadBtn"),
   status: document.getElementById("status"),
   searchInput: document.getElementById("searchInput"),
   groupSelect: document.getElementById("groupSelect"),
@@ -112,16 +115,6 @@ const els = {
   filterCollapseBtn: document.getElementById("filterCollapseBtn"),
   sidebarCollapseBtn: document.getElementById("sidebarCollapseBtn"),
   sidebarExpandBtn: document.getElementById("sidebarExpandBtn"),
-  exportSettingsBtn: document.getElementById("exportSettingsBtn"),
-  importSettingsBtn: document.getElementById("importSettingsBtn"),
-  importSettingsInput: document.getElementById("importSettingsInput"),
-  ccPreferenceInput: document.getElementById("ccPreferenceInput"),
-  addCcPreferenceBtn: document.getElementById("addCcPreferenceBtn"),
-  ccPreferencesList: document.getElementById("ccPreferencesList"),
-  blacklistCount: document.getElementById("blacklistCount"),
-  clearBlacklistBtn: document.getElementById("clearBlacklistBtn"),
-  hiddenChannelsSection: document.getElementById("hiddenChannelsSection"),
-  hiddenChannelsList: document.getElementById("hiddenChannelsList"),
   splitHandle: document.getElementById("splitHandle"),
   sidebar: document.querySelector(".sidebar"),
   playbackOverlay: document.getElementById("playbackOverlay"),
@@ -134,12 +127,16 @@ const els = {
   channelName: document.getElementById("channelName"),
   channelMeta: document.getElementById("channelMeta"),
   channelLogo: document.getElementById("channelLogo"),
+  recordingDurationModal: document.getElementById("recordingDurationModal"),
+  recordingChannelName: document.getElementById("recordingChannelName"),
+  recordingModalCloseBtn: document.getElementById("recordingModalCloseBtn"),
+  recordingModalCancelBtn: document.getElementById("recordingModalCancelBtn"),
+  settingsBtn: document.getElementById("settingsBtn"),
 };
 
 init();
 
 function init() {
-  els.loadBtn.addEventListener("click", loadPlaylist);
   els.searchInput.addEventListener("input", scheduleFilter);
   els.groupSelect.addEventListener("change", onGroupFilterChange);
   els.countrySelect.addEventListener("change", onCountryFilterChange);
@@ -150,29 +147,6 @@ function init() {
     void onChannelListClick(event);
   });
   els.channelList.addEventListener("scroll", maybeRenderMore);
-  els.exportSettingsBtn.addEventListener("click", exportSettings);
-  els.importSettingsBtn.addEventListener("click", () => {
-    els.importSettingsInput.click();
-  });
-  els.importSettingsInput.addEventListener("change", (event) => {
-    void importSettings(event);
-  });
-  els.addCcPreferenceBtn.addEventListener("click", addCcPreferenceFromInput);
-  els.ccPreferenceInput.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-
-    event.preventDefault();
-    addCcPreferenceFromInput();
-  });
-  els.ccPreferencesList.addEventListener("click", onCcPreferencesListClick);
-  els.clearBlacklistBtn.addEventListener("click", () => {
-    void clearBlacklist();
-  });
-  els.hiddenChannelsList.addEventListener("click", (event) => {
-    void onHiddenChannelsListClick(event);
-  });
   els.blacklistChannelBtn.addEventListener("click", () => {
     void blacklistOverlayChannel();
   });
@@ -190,6 +164,25 @@ function init() {
   });
   els.sidebarExpandBtn.addEventListener("click", () => {
     setSidebarCollapsed(false);
+  });
+
+  // Recording modal event listeners
+  els.recordingModalCloseBtn.addEventListener("click", closeRecordingModal);
+  els.recordingModalCancelBtn.addEventListener("click", closeRecordingModal);
+  els.recordingDurationModal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeRecordingModal();
+    }
+  });
+
+  const durationButtons = els.recordingDurationModal.querySelectorAll(".duration-btn");
+  for (const btn of durationButtons) {
+    btn.addEventListener("click", onDurationButtonClick);
+  }
+
+  // Settings button navigation
+  els.settingsBtn.addEventListener("click", () => {
+    window.location.href = "/settings";
   });
 
   initSplitter();
@@ -215,10 +208,11 @@ function initPersistedFilters() {
 }
 
 function initCcPreferences() {
+  // Load caption preferences from localStorage for use during playback
+  // The UI for managing caption preferences is only on the settings page
   const saved = window.localStorage.getItem(CC_PREFERENCES_KEY);
   if (!saved) {
     state.ccPreferences = [];
-    renderCcPreferences();
     return;
   }
 
@@ -227,8 +221,6 @@ function initCcPreferences() {
   } catch {
     state.ccPreferences = [];
   }
-
-  renderCcPreferences();
 }
 
 function normalizeCcPreference(value) {
@@ -318,13 +310,19 @@ function onCcPreferencesListClick(event) {
 }
 
 function renderCcPreferences() {
-  els.ccPreferencesList.innerHTML = "";
+  // Only render on pages that have the element (not on main player)
+  const ccList = document.getElementById("ccPreferencesList");
+  if (!ccList) {
+    return;
+  }
+
+  ccList.innerHTML = "";
 
   if (!state.ccPreferences.length) {
     const li = document.createElement("li");
     li.className = "cc-preference-empty";
     li.textContent = "No preferences set.";
-    els.ccPreferencesList.appendChild(li);
+    ccList.appendChild(li);
     return;
   }
 
@@ -377,7 +375,7 @@ function renderCcPreferences() {
     frag.appendChild(li);
   }
 
-  els.ccPreferencesList.appendChild(frag);
+  ccList.appendChild(frag);
 }
 
 function onGroupFilterChange() {
@@ -696,11 +694,16 @@ function scheduleFilter() {
 }
 
 async function loadPlaylist() {
-  const url = (els.playlistUrl.value || "").trim();
+  // Check localStorage first for saved playlist URL, fall back to element value
+  const savedUrl = window.localStorage.getItem("playlistUrl");
+  const url = (savedUrl || els.playlistUrl.value || "").trim();
   if (!url) {
     setStatus("Playlist URL is required.", true);
     return;
   }
+
+  // Update the hidden input to reflect current URL
+  els.playlistUrl.value = url;
 
   setStatus("Fetching playlist...");
 
@@ -1067,6 +1070,7 @@ function applyFilters() {
 
   state.filtered = filtered;
   renderList();
+  void loadRecordings();
 }
 
 function renderList() {
@@ -1127,6 +1131,7 @@ function renderNextChunk() {
     playTag.textContent = channel.streamType.toUpperCase();
 
     rightWrap.appendChild(playTag);
+    rightWrap.appendChild(createRecordButton(channel));
     rightWrap.appendChild(createFavoriteButton(channel.url));
 
     li.appendChild(titleWrap);
@@ -1210,6 +1215,102 @@ function onFavoritesListClick(event) {
   playChannel(channel);
 }
 
+function showRecordingsFlyout(channelName, recordings, badgeElement) {
+  // Close any existing flyout
+  const existingFlyout = document.querySelector(".recordings-flyout");
+  if (existingFlyout) {
+    existingFlyout.remove();
+  }
+
+  // Create flyout container
+  const flyout = document.createElement("div");
+  flyout.className = "recordings-flyout";
+
+  // Create title
+  const title = document.createElement("div");
+  title.className = "recordings-flyout-title";
+  title.textContent = `${channelName} - Recordings`;
+  flyout.appendChild(title);
+
+  // Create list
+  const list = document.createElement("ul");
+  list.className = "recordings-flyout-list";
+
+  for (const recording of recordings) {
+    const li = document.createElement("li");
+    li.className = "recordings-flyout-item";
+
+    const dateStr = recording.completed_at
+      ? new Date(recording.completed_at).toLocaleDateString()
+      : "Unknown";
+
+    const text = document.createElement("span");
+    text.textContent = `${recording.duration_minutes}m - ${dateStr}`;
+
+    li.appendChild(text);
+    li.style.cursor = "pointer";
+    li.addEventListener("click", () => {
+      playRecording(recording, channelName);
+      flyout.remove();
+    });
+
+    list.appendChild(li);
+  }
+
+  flyout.appendChild(list);
+
+  // Position flyout near the badge
+  const rect = badgeElement.getBoundingClientRect();
+  flyout.style.position = "fixed";
+  flyout.style.left = (rect.left - 150) + "px";
+  flyout.style.top = (rect.bottom + 5) + "px";
+
+  document.body.appendChild(flyout);
+
+  // Close flyout when clicking outside
+  const closeHandler = (e) => {
+    if (!flyout.contains(e.target) && e.target !== badgeElement) {
+      flyout.remove();
+      document.removeEventListener("click", closeHandler);
+    }
+  };
+  document.addEventListener("click", closeHandler);
+}
+
+function playRecording(recording, channelName) {
+  hidePlaybackOverlay();
+  showPlayerPlaceholder(false);
+  teardownPlayers();
+
+  state.hasSelectedChannel = true;
+  state.selectedUrl = null; // Not a channel, it's a recording
+  state.isPlayingRecording = true;
+  state.currentRecordingId = recording.id;
+  updateActiveChannel();
+
+  els.channelName.textContent = `${channelName} (Recording)`;
+  const dateStr = recording.completed_at
+    ? new Date(recording.completed_at).toLocaleDateString()
+    : "Unknown";
+  els.channelMeta.textContent = `${recording.duration_minutes}m • Completed ${dateStr}`;
+  els.channelLogo.hidden = true;
+
+  startPlaybackGuard();
+  setStatus("Loading recording...");
+
+  try {
+    // Serve recording through API to handle path encoding issues
+    const recordingUrl = `/api/recordings/file/${recording.id}`;
+    els.video.src = recordingUrl;
+    requestPlay();
+    setStatus("Playing recording.");
+    scheduleCaptionPreferenceApply();
+  } catch (err) {
+    console.error(err);
+    setStatus("Failed to load recording.", true);
+  }
+}
+
 function playChannel(channel) {
   hidePlaybackOverlay();
   showPlayerPlaceholder(false);
@@ -1218,6 +1319,7 @@ function playChannel(channel) {
   state.hasSelectedChannel = true;
   state.selectedUrl = channel.url;
   state.lastTriedChannel = channel;
+  state.isPlayingRecording = false;
   setBookmarkedChannelUrl(channel.url, channel.id || "", channel.display || channel.name || "");
   updateActiveChannel();
 
@@ -1733,15 +1835,28 @@ async function clearBlacklist() {
 }
 
 function updateBlacklistCount() {
+  // Only update on pages that have the blacklist count element (settings page)
+  const blacklistCountEl = document.getElementById("blacklistCount");
+  if (!blacklistCountEl) {
+    return;
+  }
+
   const count = state.blacklistSet.size;
-  els.blacklistCount.textContent = `${count} hidden channel${count === 1 ? "" : "s"}`;
+  blacklistCountEl.textContent = `${count} hidden channel${count === 1 ? "" : "s"}`;
 }
 
 function renderHiddenChannelsList() {
-  els.hiddenChannelsList.innerHTML = "";
+  // Only render on pages that have the hidden channels list (settings page)
+  const hiddenList = document.getElementById("hiddenChannelsList");
+  const hiddenSection = document.getElementById("hiddenChannelsSection");
+  if (!hiddenList || !hiddenSection) {
+    return;
+  }
+
+  hiddenList.innerHTML = "";
 
   const hiddenUrls = [...state.blacklistSet];
-  els.hiddenChannelsSection.hidden = hiddenUrls.length === 0;
+  hiddenSection.hidden = hiddenUrls.length === 0;
   if (!hiddenUrls.length) {
     return;
   }
@@ -1774,7 +1889,7 @@ function renderHiddenChannelsList() {
     frag.appendChild(li);
   }
 
-  els.hiddenChannelsList.appendChild(frag);
+  hiddenList.appendChild(frag);
 }
 
 function onHiddenChannelsListClick(event) {
@@ -2093,4 +2208,188 @@ function typeForUrl(url) {
 function setStatus(msg, isWarn = false) {
   els.status.textContent = msg;
   els.status.classList.toggle("warn", isWarn);
+}
+
+// ===== Recording Features =====
+
+function createRecordButton(channel) {
+  const recordingsForChannel = state.recordingsMap.get(channel.name) || [];
+  const hasRecordings = recordingsForChannel.length > 0;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `record-toggle${hasRecordings ? " has-recordings" : ""}`;
+  btn.dataset.channelName = channel.name;
+  btn.dataset.channelUrl = channel.url;
+  btn.setAttribute("aria-label", "Record channel");
+  btn.textContent = "📹";
+
+  if (hasRecordings) {
+    const badge = document.createElement("div");
+    badge.className = "recording-badge";
+    badge.textContent = String(recordingsForChannel.length);
+    btn.appendChild(badge);
+  }
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openRecordingModal(channel);
+  });
+
+  return btn;
+}
+
+function openRecordingModal(channel) {
+  state.recordingChannelForModal = channel;
+  state.selectedRecordingDuration = null;
+  els.recordingChannelName.textContent = channel.display || channel.name;
+
+  // Reset duration button states
+  const durationButtons = els.recordingDurationModal.querySelectorAll(".duration-btn");
+  for (const btn of durationButtons) {
+    btn.classList.remove("selected");
+  }
+
+  els.recordingDurationModal.showModal();
+}
+
+function closeRecordingModal() {
+  els.recordingDurationModal.close();
+  state.recordingChannelForModal = null;
+  state.selectedRecordingDuration = null;
+}
+
+function onDurationButtonClick(event) {
+  const btn = event.target;
+  const duration = parseFloat(btn.dataset.duration);
+
+  // Update selection state
+  const durationButtons = els.recordingDurationModal.querySelectorAll(".duration-btn");
+  for (const b of durationButtons) {
+    b.classList.remove("selected");
+  }
+  btn.classList.add("selected");
+
+  state.selectedRecordingDuration = duration;
+
+  // Auto-submit after brief delay
+  setTimeout(() => {
+    if (state.selectedRecordingDuration === duration && state.recordingChannelForModal) {
+      void submitRecording();
+    }
+  }, 200);
+}
+
+async function submitRecording() {
+  if (!state.recordingChannelForModal || !state.selectedRecordingDuration) {
+    return;
+  }
+
+  const channel = state.recordingChannelForModal;
+  const duration = state.selectedRecordingDuration;
+
+  closeRecordingModal();
+  setStatus(`Starting recording of ${channel.display || channel.name}...`);
+
+  try {
+    const res = await fetch("/api/recordings/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_url: channel.url,
+        channel_name: channel.display || channel.name,
+        duration_minutes: duration,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Start recording failed: HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    setStatus(`Recording started: ${data.recording_id}`);
+
+    // Refresh recordings list after a short delay
+    setTimeout(() => {
+      void loadRecordings();
+    }, 500);
+  } catch (err) {
+    console.error("Recording error:", err);
+    setStatus(`Recording error: ${err.message}`, true);
+  }
+}
+
+async function loadRecordings() {
+  try {
+    // Get unique channel names from filtered channels
+    const channelNames = new Set(state.filtered.map((ch) => ch.display || ch.name));
+
+    // For each channel, load its recordings
+    for (const channelName of channelNames) {
+      const res = await fetch(`/api/recordings/list?channel_name=${encodeURIComponent(channelName)}`);
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const recordings = data.recordings || [];
+      state.recordingsMap.set(channelName, recordings);
+    }
+
+    // Update rendered channel items to show badges
+    updateRecordingBadges();
+  } catch (err) {
+    console.error("Load recordings error:", err);
+  }
+}
+
+function updateRecordingBadges() {
+  const items = els.channelList.querySelectorAll(".channel-item");
+  for (const item of items) {
+    const url = item.dataset.url;
+    if (!url) continue;
+
+    const channel = state.filtered.find((ch) => ch.url === url);
+    if (!channel) continue;
+
+    const channelName = channel.display || channel.name;
+    const recordingsForChannel = state.recordingsMap.get(channelName) || [];
+
+    // Separate in-progress from completed
+    const inProgress = recordingsForChannel.filter(
+      (r) => r.status === "recording" || r.status === "pending"
+    );
+    const completed = recordingsForChannel.filter((r) => r.status === "complete");
+
+    // Find or create badge container (use channel-item-right if available)
+    let badgeContainer = item.querySelector(".channel-item-right");
+    if (!badgeContainer) {
+      badgeContainer = item;
+    }
+
+    // Remove old badges
+    badgeContainer.querySelectorAll(".recording-badge-icon").forEach((badge) => badge.remove());
+
+    // Add in-progress badge (red circle)
+    if (inProgress.length > 0) {
+      const badge = document.createElement("div");
+      badge.className = "recording-badge-icon recording-badge-icon-active";
+      badge.title = `Recording in progress (${inProgress.length})`;
+      badge.setAttribute("aria-label", `Recording in progress (${inProgress.length})`);
+      badgeContainer.appendChild(badge);
+    }
+
+    // Add completed badge (green circle with count) - CLICKABLE
+    if (completed.length > 0) {
+      const badge = document.createElement("div");
+      badge.className = "recording-badge-icon recording-badge-icon-completed";
+      badge.textContent = String(completed.length);
+      badge.title = `${completed.length} completed recording${completed.length !== 1 ? "s" : ""} - click to view`;
+      badge.setAttribute("aria-label", `${completed.length} completed recording${completed.length !== 1 ? "s" : ""}`);
+      badge.dataset.channelName = channelName;
+      badge.style.cursor = "pointer";
+      badge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showRecordingsFlyout(channelName, completed, badge);
+      });
+      badgeContainer.appendChild(badge);
+    }
+  }
 }

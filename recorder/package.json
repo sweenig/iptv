@@ -1,0 +1,12 @@
+{
+  "name": "iptv-recorder",
+  "version": "1.0.0",
+  "description": "Recorder service for IPTV server-side recordings",
+  "main": "recorder.js",
+  "scripts": {
+    "start": "node recorder.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2"
+  }
+}

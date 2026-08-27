@@ -3,20 +3,55 @@ services:
     build: .
     container_name: iptv-web
     depends_on:
-      - favorites-api
+      - data-api
     ports:
       - "8085:80"
     restart: unless-stopped
 
-  favorites-api:
+  data-api:
     build: ./api
-    container_name: iptv-favorites-api
+    container_name: iptv-data-api
     environment:
       - PORT=3000
       - DATA_DIR=/data
+      - RECORDINGS_DIR=/recordings
     volumes:
       - favorites_data:/data
+      - recordings_data:/recordings
+    restart: unless-stopped
+
+  queue-manager:
+    build: ./queue-manager
+    container_name: iptv-queue-manager
+    depends_on:
+      - data-api
+    environment:
+      - DATA_DIR=/data
+      - RECORDINGS_DIR=/recordings
+      - POLL_INTERVAL_MS=10000
+      - STALE_JOB_TIMEOUT_MS=300000
+      - CLEANUP_DAYS=7
+    volumes:
+      - favorites_data:/data
+      - recordings_data:/recordings
+    restart: unless-stopped
+
+  recorder:
+    build: ./recorder
+    depends_on:
+      - data-api
+    environment:
+      - DATA_DIR=/data
+      - RECORDINGS_DIR=/recordings
+      - POLL_INTERVAL_MS=3000
+      - HEARTBEAT_INTERVAL_MS=30000
+    volumes:
+      - favorites_data:/data
+      - recordings_data:/recordings
+    deploy:
+      replicas: 3
     restart: unless-stopped
 
 volumes:
   favorites_data:
+  recordings_data:

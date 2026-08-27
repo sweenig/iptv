@@ -45,6 +45,8 @@ services:
       - RECORDINGS_DIR=/recordings
       - POLL_INTERVAL_MS=3000
       - HEARTBEAT_INTERVAL_MS=30000
+      - MAX_RETRY_ATTEMPTS=5
+      - RETRY_DELAY_MS=3000
     volumes:
       - favorites_data:/data
       - recordings_data:/recordings

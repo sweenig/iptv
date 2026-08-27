@@ -1,5 +1,5 @@
 const Database = require("better-sqlite3");
-const { spawn } = require("node:child_process");
+const { spawn, execSync } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -8,6 +8,8 @@ const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "/recordings";
 const DB_PATH = path.join(DATA_DIR, "recordings.db");
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 3000);
 const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS || 30000);
+const MAX_RETRY_ATTEMPTS = Number(process.env.MAX_RETRY_ATTEMPTS || 5);
+const RETRY_DELAY_MS = Number(process.env.RETRY_DELAY_MS || 3000);
 
 // Generate unique recorder ID from hostname and a random suffix
 const RECORDER_ID = `recorder-${process.env.HOSTNAME || "unknown"}`.slice(0, 50);
@@ -115,6 +117,56 @@ async function updateHeartbeat(jobId) {
   }
 }
 
+// Convert TS file to MP4
+async function convertTsToMp4(tsPath, mp4Path, jobId) {
+  return new Promise((resolve) => {
+    console.log(`[${RECORDER_ID}] Converting ${path.basename(tsPath)} to MP4 for job ${jobId}`);
+    
+    const ffmpegProcess = spawn("ffmpeg", [
+      "-i",
+      tsPath,
+      "-c:v",
+      "copy",
+      "-c:a",
+      "copy",
+      "-f",
+      "mp4",
+      mp4Path,
+    ]);
+
+    let errorOutput = "";
+    ffmpegProcess.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    ffmpegProcess.on("exit", (code) => {
+      if (code === 0) {
+        console.log(`[${RECORDER_ID}] Conversion completed successfully for job ${jobId}`);
+        // Delete TS file after successful conversion
+        fs.unlink(tsPath)
+          .then(() => {
+            console.log(`[${RECORDER_ID}] Deleted temporary TS file for job ${jobId}`);
+            resolve({ success: true });
+          })
+          .catch((err) => {
+            console.warn(`[${RECORDER_ID}] Could not delete TS file: ${err.message}`);
+            resolve({ success: true }); // Still consider conversion successful
+          });
+      } else {
+        const error = `TS to MP4 conversion failed with code ${code}`;
+        console.error(`[${RECORDER_ID}] ${error} for job ${jobId}`);
+        resolve({ success: false, error });
+      }
+    });
+
+    ffmpegProcess.on("error", (err) => {
+      const errorMsg = `FFmpeg conversion spawn error: ${err.message}`;
+      console.error(`[${RECORDER_ID}] ${errorMsg} for job ${jobId}`);
+      resolve({ success: false, error: errorMsg });
+    });
+  });
+}
+
 async function runFFmpeg(job) {
   return new Promise((resolve) => {
     try {
@@ -123,90 +175,141 @@ async function runFFmpeg(job) {
       const channelDir = path.join(RECORDINGS_DIR, sanitizedChannelName);
       fs.mkdir(channelDir, { recursive: true })
         .then(() => {
-          // Create output filename with timestamp and duration
           const timestamp = Date.now();
-          const filename = `recording-${timestamp}-${job.duration_minutes}m.mp4`;
-          const outputPath = path.join(channelDir, filename);
-          const filePathForDb = path.join(sanitizedChannelName, filename);
+          const tsFilename = `recording-${timestamp}-${job.duration_minutes}m.ts`;
+          const mp4Filename = `recording-${timestamp}-${job.duration_minutes}m.mp4`;
+          const tsPath = path.join(channelDir, tsFilename);
+          const mp4Path = path.join(channelDir, mp4Filename);
+          const filePathForDb = path.join(sanitizedChannelName, mp4Filename);
 
-          console.log(
-            `[${RECORDER_ID}] Starting FFmpeg for job ${job.id}: ${job.channel_url} -> ${outputPath}`
-          );
-
-          // Calculate total duration with 5-10 minute buffer
-          const bufferMinutes = 7; // 7 minutes buffer
+          // Calculate total duration with 5-10 minute buffer (in seconds)
+          const bufferMinutes = 7;
           const totalSeconds = (job.duration_minutes + bufferMinutes) * 60;
+          const recordingStartTime = Date.now();
+          let retryCount = 0;
 
-          // Spawn FFmpeg process
-          currentFfmpegProcess = spawn("ffmpeg", [
-            "-i",
-            job.channel_url,
-            "-c:v",
-            "copy", // Don't re-encode video
-            "-c:a",
-            "copy", // Don't re-encode audio
-            "-t",
-            String(totalSeconds), // Duration limit
-            "-f",
-            "mp4",
-            outputPath,
-          ]);
+          const startRecording = () => {
+            console.log(
+              `[${RECORDER_ID}] Starting FFmpeg (attempt ${retryCount + 1}) for job ${job.id}: ${job.channel_url} -> ${tsPath}`
+            );
 
-          let errorOutput = "";
+            // Record to TS format with retry capability
+            currentFfmpegProcess = spawn("ffmpeg", [
+              "-i",
+              job.channel_url,
+              "-c:v",
+              "copy",
+              "-c:a",
+              "copy",
+              "-t",
+              String(totalSeconds),
+              "-f",
+              "mpegts",
+              tsPath,
+            ]);
 
-          currentFfmpegProcess.stderr.on("data", (data) => {
-            errorOutput += data.toString();
-          });
+            let errorOutput = "";
+            currentFfmpegProcess.stderr.on("data", (data) => {
+              errorOutput += data.toString();
+            });
 
-          currentFfmpegProcess.stdout.on("data", (data) => {
-            // Ignore stdout
-          });
+            currentFfmpegProcess.stdout.on("data", (data) => {
+              // Ignore stdout
+            });
 
-          // Heartbeat timer
-          const heartbeatTimer = setInterval(() => {
-            updateHeartbeat(job.id);
-          }, HEARTBEAT_INTERVAL_MS);
+            // Heartbeat timer
+            const heartbeatTimer = setInterval(() => {
+              updateHeartbeat(job.id);
+            }, HEARTBEAT_INTERVAL_MS);
 
-          currentFfmpegProcess.on("exit", (code) => {
-            clearInterval(heartbeatTimer);
-            currentFfmpegProcess = null;
+            currentFfmpegProcess.on("exit", (code) => {
+              clearInterval(heartbeatTimer);
+              currentFfmpegProcess = null;
 
-            if (code === 0) {
-              console.log(`[${RECORDER_ID}] FFmpeg completed successfully for job ${job.id}`);
-              // Mark job as complete
-              const now = new Date().toISOString();
-              db.prepare(
-                `UPDATE recordings_jobs 
-                 SET status = 'complete', completed_at = ?, file_path = ?
-                 WHERE id = ?`
-              ).run(now, filePathForDb, job.id);
-              resolve({ success: true });
-            } else {
-              const error = `FFmpeg exited with code ${code}`;
-              console.error(`[${RECORDER_ID}] ${error} for job ${job.id}`);
-              // Mark job as failed
-              db.prepare(
-                `UPDATE recordings_jobs 
-                 SET status = 'failed', error = ?
-                 WHERE id = ?`
-              ).run(error, job.id);
-              resolve({ success: false, error });
-            }
-          });
+              const elapsedSeconds = (Date.now() - recordingStartTime) / 1000;
+              const shouldRetry = code !== 0 && retryCount < MAX_RETRY_ATTEMPTS && elapsedSeconds < totalSeconds;
 
-          currentFfmpegProcess.on("error", (err) => {
-            clearInterval(heartbeatTimer);
-            currentFfmpegProcess = null;
-            const errorMsg = `FFmpeg spawn error: ${err.message}`;
-            console.error(`[${RECORDER_ID}] ${errorMsg} for job ${job.id}`);
-            // Mark job as failed
-            db.prepare(
-              `UPDATE recordings_jobs 
-               SET status = 'failed', error = ?
-               WHERE id = ?`
-            ).run(errorMsg, job.id);
-            resolve({ success: false, error: errorMsg });
-          });
+              if (code === 0 || !shouldRetry) {
+                // Recording complete (either succeeded or max retries reached)
+                console.log(
+                  `[${RECORDER_ID}] Recording session ended for job ${job.id} (code: ${code}, elapsed: ${elapsedSeconds.toFixed(1)}s)`
+                );
+
+                // Convert TS to MP4
+                convertTsToMp4(tsPath, mp4Path, job.id).then((conversionResult) => {
+                  if (!conversionResult.success) {
+                    const error = conversionResult.error || "Conversion failed";
+                    db.prepare(
+                      `UPDATE recordings_jobs 
+                       SET status = 'failed', error = ?
+                       WHERE id = ?`
+                    ).run(error, job.id);
+                    resolve({ success: false, error });
+                    return;
+                  }
+
+                  // Get actual video duration using ffprobe
+                  let actualDurationMinutes = job.duration_minutes;
+                  try {
+                    const ffprobeOutput = execSync(
+                      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${mp4Path}"`
+                    ).toString().trim();
+                    const durationSeconds = parseFloat(ffprobeOutput);
+                    if (!isNaN(durationSeconds)) {
+                      actualDurationMinutes = Math.round((durationSeconds / 60) * 100) / 100;
+                      console.log(`[${RECORDER_ID}] Actual duration: ${actualDurationMinutes}m (${durationSeconds}s)`);
+                    }
+                  } catch (err) {
+                    console.warn(`[${RECORDER_ID}] Could not get video duration: ${err.message}`);
+                  }
+
+                  // Mark job as complete
+                  const now = new Date().toISOString();
+                  db.prepare(
+                    `UPDATE recordings_jobs 
+                     SET status = 'complete', completed_at = ?, file_path = ?, duration_minutes = ?
+                     WHERE id = ?`
+                  ).run(now, filePathForDb, actualDurationMinutes, job.id);
+                  resolve({ success: true });
+                });
+              } else {
+                // Stream interrupted, retry
+                retryCount++;
+                console.log(
+                  `[${RECORDER_ID}] Stream interrupted after ${elapsedSeconds.toFixed(1)}s, retrying in ${RETRY_DELAY_MS}ms (attempt ${retryCount}/${MAX_RETRY_ATTEMPTS})`
+                );
+                setTimeout(startRecording, RETRY_DELAY_MS);
+              }
+            });
+
+            currentFfmpegProcess.on("error", (err) => {
+              clearInterval(heartbeatTimer);
+              currentFfmpegProcess = null;
+
+              const elapsedSeconds = (Date.now() - recordingStartTime) / 1000;
+              const shouldRetry = retryCount < MAX_RETRY_ATTEMPTS && elapsedSeconds < totalSeconds;
+
+              if (shouldRetry) {
+                retryCount++;
+                console.log(
+                  `[${RECORDER_ID}] FFmpeg error: ${err.message}, retrying in ${RETRY_DELAY_MS}ms (attempt ${retryCount}/${MAX_RETRY_ATTEMPTS})`
+                );
+                setTimeout(startRecording, RETRY_DELAY_MS);
+              } else {
+                const errorMsg = `FFmpeg spawn error: ${err.message}`;
+                console.error(`[${RECORDER_ID}] ${errorMsg} for job ${job.id}`);
+                db.prepare(
+                  `UPDATE recordings_jobs 
+                   SET status = 'failed', error = ?
+                   WHERE id = ?`
+                ).run(errorMsg, job.id);
+                resolve({ success: false, error: errorMsg });
+              }
+            });
+          };
+
+          // Start recording
+          startRecording();
         })
         .catch((err) => {
           const errorMsg = `Failed to create channel directory: ${err.message}`;

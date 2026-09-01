@@ -871,6 +871,46 @@ button:hover {
   font-size: 0.9rem;
 }
 
+.channel-url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.channel-url-row[hidden] {
+  display: none;
+}
+
+input.channel-url {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+.channel-url-copy {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-1);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.channel-url-copy:hover {
+  border-color: #19d3ff;
+  color: #19d3ff;
+}
+
 #channelName {
   margin-top: 2px;
   line-height: 1.12;

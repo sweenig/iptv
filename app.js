@@ -127,6 +127,9 @@ const els = {
   channelName: document.getElementById("channelName"),
   channelMeta: document.getElementById("channelMeta"),
   channelLogo: document.getElementById("channelLogo"),
+  channelUrlRow: document.getElementById("channelUrlRow"),
+  channelUrl: document.getElementById("channelUrl"),
+  copyChannelUrlBtn: document.getElementById("copyChannelUrlBtn"),
   recordingDurationModal: document.getElementById("recordingDurationModal"),
   recordingChannelName: document.getElementById("recordingChannelName"),
   recordingModalCloseBtn: document.getElementById("recordingModalCloseBtn"),
@@ -138,6 +141,8 @@ init();
 
 function init() {
   els.searchInput.addEventListener("input", scheduleFilter);
+  els.copyChannelUrlBtn.addEventListener("click", copyChannelUrl);
+  els.channelUrl.addEventListener("focus", () => els.channelUrl.select());
   els.groupSelect.addEventListener("change", onGroupFilterChange);
   els.countrySelect.addEventListener("change", onCountryFilterChange);
   els.favoritesFilter.addEventListener("change", onFavoritesFilterChange);
@@ -1277,6 +1282,35 @@ function showRecordingsFlyout(channelName, recordings, badgeElement) {
   document.addEventListener("click", closeHandler);
 }
 
+function setChannelUrlDisplay(url) {
+  if (!els.channelUrlRow) return;
+  if (url) {
+    els.channelUrl.value = url;
+    els.channelUrl.title = url;
+    els.channelUrlRow.hidden = false;
+  } else {
+    els.channelUrl.value = "";
+    els.channelUrl.removeAttribute("title");
+    els.channelUrlRow.hidden = true;
+  }
+}
+
+async function copyChannelUrl() {
+  const url = els.channelUrl.value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    els.channelUrl.select();
+    document.execCommand("copy");
+  }
+  const original = els.copyChannelUrlBtn.textContent;
+  els.copyChannelUrlBtn.textContent = "Copied";
+  setTimeout(() => {
+    els.copyChannelUrlBtn.textContent = original;
+  }, 1500);
+}
+
 function playRecording(recording, channelName) {
   hidePlaybackOverlay();
   showPlayerPlaceholder(false);
@@ -1294,6 +1328,7 @@ function playRecording(recording, channelName) {
     : "Unknown";
   els.channelMeta.textContent = `${recording.duration_minutes}m • Completed ${dateStr}`;
   els.channelLogo.hidden = true;
+  setChannelUrlDisplay(new URL(`/api/recordings/file/${recording.id}`, window.location.href).href);
 
   startPlaybackGuard();
   setStatus("Loading recording...");
@@ -1325,6 +1360,7 @@ function playChannel(channel) {
 
   els.channelName.textContent = channel.display || channel.name;
   els.channelMeta.textContent = `${channel.group || "Other"} ${channel.id ? `• ${channel.id}` : ""}`;
+  setChannelUrlDisplay(channel.url);
 
   if (channel.logo) {
     els.channelLogo.src = channel.logo;
@@ -1743,6 +1779,7 @@ async function importSettings(event) {
       els.channelMeta.textContent = "Waiting for selection.";
       els.channelLogo.hidden = true;
       els.channelLogo.removeAttribute("src");
+      setChannelUrlDisplay("");
       showPlayerPlaceholder(true);
     }
 
@@ -2094,6 +2131,7 @@ async function blacklistOverlayChannel() {
       els.channelMeta.textContent = "Waiting for selection.";
       els.channelLogo.hidden = true;
       els.channelLogo.removeAttribute("src");
+      setChannelUrlDisplay("");
       showPlayerPlaceholder(true);
     }
 

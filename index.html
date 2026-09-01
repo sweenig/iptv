@@ -145,6 +145,10 @@
               <p class="eyebrow">Now Playing</p>
               <h2 id="channelName">Select a channel</h2>
               <p id="channelMeta" class="channel-meta">Waiting for selection.</p>
+              <div id="channelUrlRow" class="channel-url-row" hidden>
+                <input id="channelUrl" class="channel-url" type="text" readonly aria-label="Stream URL" />
+                <button id="copyChannelUrlBtn" type="button" class="channel-url-copy" title="Copy stream URL">Copy</button>
+              </div>
             </div>
           </div>
 
@@ -160,6 +164,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=15"></script>
+    <script type="module" src="./app.js?v=16"></script>
   </body>
 </html>

@@ -4,6 +4,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/index.html
 COPY settings.html /usr/share/nginx/html/settings.html
 COPY styles.css /usr/share/nginx/html/styles.css
+COPY fonts.css /usr/share/nginx/html/fonts.css
+COPY fonts/ /usr/share/nginx/html/fonts/
 COPY app.js /usr/share/nginx/html/app.js
 COPY settings-page.js /usr/share/nginx/html/settings-page.js
 
